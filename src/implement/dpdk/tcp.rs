@@ -1,10 +1,4 @@
-//TODO: implement the following functions
-//
-// pub fn tpa_accept_burst(sid: ::std::os::raw::c_int, burst: *mut ::std::os::raw::c_int) -> ::std::os::raw::c_int;
-// pub fn tpa_sock_info_get(sid: ::std::os::raw::c_int, info: *mut tpa_sock_info) -> ::std::os::raw::c_int;
-// pub fn tpa_close(sid: ::std::os::raw::c_int) -> ::std::os::raw::c_int;
-// pub fn tpa_zreadv(sid: ::std::os::raw::c_int, iov: *mut ::std::os::raw::c_void, iovcnt: ::std::os::raw::c_int) -> ::std::os::raw::c_int;
-// pub fn tpa_zwritev(sid: ::std::os::raw::c_int, iov: *mut ::std::os::raw::c_void, iovcnt: ::std::os::raw::c_int) -> ::std::os::raw::c_int;
+//TODO: Implement the following functions
 //
 // pub fn tpa_memsegs_get() -> *mut tpa_memseg;
 // pub fn tpa_extmem_register
@@ -175,46 +169,6 @@ pub fn tcp_connect(
     Ok(fd)
 }
 
-pub fn tcp_read_exact(
-    worker: &mut Box<tpa_worker>,
-    sid: i32,
-    buf: &mut [u8],
-    size: usize,
-) -> Result<isize, std::io::Error> {
-    assert!(buf.len() >= size);
-    let mut buf = &mut buf[..size];
-    let mut uninit = [MaybeUninit::<tpa_event>::uninit(); 32];
-    let mut events = uninit
-        .iter_mut()
-        .map(|x| unsafe { x.assume_init() })
-        .collect::<Vec<tpa_event>>();
-
-    while !buf.is_empty() {
-        //tcp_worker_run(worker);
-        tcp_event_poll(worker, &mut events, 32);
-        let uninit: MaybeUninit<tpa_iovec> = MaybeUninit::<tpa_iovec>::uninit();
-        let mut iov = unsafe { uninit.assume_init() };
-        iov.iov_len = 0;
-        let ret = unsafe { tpa_zreadv(sid, &mut iov, 1) };
-
-        if ret > 0 {
-            let src = unsafe {
-                std::slice::from_raw_parts(iov.iov_base as *const u8, iov.iov_len as usize)
-            };
-            let tmp = buf;
-            if src.len() <= tmp.len() {
-                tmp[..src.len()].copy_from_slice(src);
-                buf = &mut tmp[src.len()..];
-            } else {
-                panic!("Buffer overflow remaining {} pkt {}", tmp.len(), src.len());
-            }
-            unsafe { iov.__bindgen_anon_1.iov_read_done.unwrap()(iov.iov_base, iov.iov_param) };
-        }
-    }
-
-    Ok(size as isize)
-}
-
 pub fn tcp_socket_info_get(sid: i32) -> Result<libtcp::ffi::tpa_sock_info, std::io::Error> {
     let mut uninit = MaybeUninit::<libtcp::ffi::tpa_sock_info>::uninit();
     let info = uninit.as_mut_ptr();
@@ -247,24 +201,6 @@ pub fn tcp_event_register(sid: i32, events: u32) -> Result<(), std::io::Error> {
 
     match unsafe {
         libtcp::ffi::tpa_event_ctrl(sid, libtcp::ffi::TPA_EVENT_CTRL_ADD as i32, &mut event)
-    } {
-        0 => Ok(()),
-        _ => Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "tpa_event_ctrl failed",
-        )),
-    }
-}
-
-pub fn tcp_event_update(sid: i32, events: u32) -> Result<(), std::io::Error> {
-    let mut uninit = MaybeUninit::<tpa_event>::uninit();
-    let event = uninit.as_mut_ptr();
-    let mut event = unsafe {
-        (*event).events = events;
-        uninit.assume_init()
-    };
-    match unsafe {
-        libtcp::ffi::tpa_event_ctrl(sid, libtcp::ffi::TPA_EVENT_CTRL_MOD as i32, &mut event)
     } {
         0 => Ok(()),
         _ => Err(std::io::Error::new(
@@ -364,6 +300,12 @@ impl TCPReader {
     }
 }
 
+impl Drop for TCPReader {
+    fn drop(&mut self) {
+        unsafe { libtcp::ffi::tpa_close(self.fd) };
+    }
+}
+
 pub struct TCPWriter {
     fd: i32,
     events: Vec<tpa_event>,
@@ -409,5 +351,11 @@ impl TCPWriter {
             tcp_event_poll(worker, &mut self.events, 32);
             return Ok(ret);
         }
+    }
+}
+
+impl Drop for TCPWriter {
+    fn drop(&mut self) {
+        unsafe { libtcp::ffi::tpa_close(self.fd) };
     }
 }
