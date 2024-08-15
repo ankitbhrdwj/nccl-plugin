@@ -3,7 +3,7 @@ use crate::interface::{
     SocketRequestID, SocketSendCommID,
 };
 use crate::utils;
-use nix::sys::socket::{InetAddr, SockAddr};
+use nix::sys::socket::{InetAddr, IpAddr, SockAddr};
 use std::collections::HashMap;
 
 use rand::Rng;
@@ -64,6 +64,9 @@ pub struct BaguaNet {
     pub recv_comm_map: HashMap<SocketRecvCommID, SocketRecvComm>,
     pub socket_request_next_id: usize,
     pub socket_request_map: HashMap<SocketRequestID, SocketRequest>,
+
+    pub storage_server_ip: IpAddr,
+    pub storage_server_port: u16,
 }
 
 impl BaguaNet {
@@ -95,6 +98,8 @@ impl BaguaNet {
             recv_comm_map: Default::default(),
             socket_request_next_id: 0,
             socket_request_map: Default::default(),
+            storage_server_ip: IpAddr::new_v4(10, 2, 1, 28),
+            storage_server_port: 5678,
         })
     }
 }
@@ -201,7 +206,15 @@ impl Net for BaguaNet {
         let id = self.send_comm_next_id;
         self.send_comm_next_id += 1;
 
+        let storage_server_handle = SocketHandle {
+            addr: SockAddr::new_inet(InetAddr::new(
+                self.storage_server_ip,
+                self.storage_server_port,
+            )),
+        };
+
         let (msg_sender, msg_receiver) = flume::unbounded();
+        let _rank = self.rank;
         self.send_comm_map.insert(
             id,
             SocketSendComm {
@@ -211,8 +224,11 @@ impl Net for BaguaNet {
                     let mut worker = tcp_worker_init();
                     let mut data_writer = TCPWriter::new(&mut worker, socket_handle.clone(), None);
                     let mut ctrl_writer = TCPWriter::new(&mut worker, socket_handle, None);
+                    let mut storage_writer =
+                        TCPWriter::new(&mut worker, storage_server_handle.clone(), None);
 
                     // Sender loop
+                    let mut send = false;
                     loop {
                         tcp_worker_run(&mut worker);
                         if let Ok((data, state)) = msg_receiver.try_recv() {
@@ -223,6 +239,20 @@ impl Net for BaguaNet {
                             data_writer
                                 .tcp_write(&mut worker, data)
                                 .expect("tcp_write failed");
+
+                            // For now it's a hack to ignore the first
+                            // iteration. GradBuckets are only setup after the
+                            // first iteration.
+                            if _rank == 0 && !send && data.len() == 262144 {
+                                send = true;
+                                println!(":: Enabling gradient replication to storage server");
+                            }
+                            if send {
+                                storage_writer
+                                    .tcp_write(&mut worker, data)
+                                    .expect("tcp_write failed");
+                            }
+
                             match state.lock() {
                                 Ok(mut state) => {
                                     state.completed_subtasks += 1;
