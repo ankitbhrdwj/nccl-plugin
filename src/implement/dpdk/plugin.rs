@@ -209,7 +209,7 @@ impl Net for BaguaNet {
         let storage_server_handle = SocketHandle {
             addr: SockAddr::new_inet(InetAddr::new(
                 self.storage_server_ip,
-                self.storage_server_port,
+                self.storage_server_port + id as u16,
             )),
         };
 
@@ -224,8 +224,15 @@ impl Net for BaguaNet {
                     let mut worker = tcp_worker_init();
                     let mut data_writer = TCPWriter::new(&mut worker, socket_handle.clone(), None);
                     let mut ctrl_writer = TCPWriter::new(&mut worker, socket_handle, None);
-                    let mut storage_writer =
-                        TCPWriter::new(&mut worker, storage_server_handle.clone(), None);
+                    let mut storage_writer = if _rank == 0 {
+                        Some(TCPWriter::new(
+                            &mut worker,
+                            storage_server_handle.clone(),
+                            None,
+                        ))
+                    } else {
+                        None
+                    };
 
                     // Sender loop
                     let mut send = false;
@@ -249,6 +256,8 @@ impl Net for BaguaNet {
                             }
                             if send {
                                 storage_writer
+                                    .as_mut()
+                                    .unwrap()
                                     .tcp_write(&mut worker, data)
                                     .expect("tcp_write failed");
                             }
