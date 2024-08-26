@@ -10,8 +10,8 @@ use rand::Rng;
 use std::sync::Mutex;
 use std::sync::{Arc, Barrier};
 
-use super::ffi::*;
 use super::tcp::*;
+use super::{ffi::*, Repeater};
 
 enum NcclPtr {
     HostPtr = 1,
@@ -23,6 +23,7 @@ pub struct RequestState {
     pub nsubtasks: usize,
     pub completed_subtasks: usize,
     pub nbytes_transferred: usize,
+    pub chunk_tag: i32,
     pub err: Option<BaguaNetError>,
 }
 
@@ -55,6 +56,7 @@ pub enum SocketRequest {
 
 pub struct BaguaNet {
     pub rank: i32,
+    pub nranks: i32,
     devices: Vec<utils::NCCLSocketDev>,
     pub listen_comm_next_id: usize,
     pub listen_comm_map: HashMap<SocketListenCommID, Arc<Barrier>>,
@@ -78,6 +80,11 @@ impl BaguaNet {
             .unwrap_or("-1".to_string())
             .parse()
             .unwrap();
+        let nranks: i32 = std::env::var("WORLD_SIZE")
+            .unwrap_or("-1".to_string())
+            .parse()
+            .unwrap();
+
         let devices = utils::find_interfaces();
         if devices.is_empty() {
             return Err(BaguaNetError::InnerError(
@@ -89,6 +96,7 @@ impl BaguaNet {
 
         Ok(BaguaNet {
             rank,
+            nranks,
             devices: utils::find_interfaces(),
             listen_comm_next_id: 0,
             listen_comm_map: Default::default(),
@@ -99,7 +107,7 @@ impl BaguaNet {
             socket_request_next_id: 0,
             socket_request_map: Default::default(),
             storage_server_ip: IpAddr::new_v4(10, 2, 1, 28),
-            storage_server_port: 5678,
+            storage_server_port: if rank == 0 { 5678 } else { 5682 }, // Offset by 4, for 4 channels.
         })
     }
 }
@@ -214,7 +222,8 @@ impl Net for BaguaNet {
         };
 
         let (msg_sender, msg_receiver) = flume::unbounded();
-        let _rank = self.rank;
+        let rank = self.rank;
+        let nranks = self.nranks;
         self.send_comm_map.insert(
             id,
             SocketSendComm {
@@ -224,18 +233,10 @@ impl Net for BaguaNet {
                     let mut worker = tcp_worker_init();
                     let mut data_writer = TCPWriter::new(&mut worker, socket_handle.clone(), None);
                     let mut ctrl_writer = TCPWriter::new(&mut worker, socket_handle, None);
-                    let mut storage_writer = if _rank == 0 {
-                        Some(TCPWriter::new(
-                            &mut worker,
-                            storage_server_handle.clone(),
-                            None,
-                        ))
-                    } else {
-                        None
-                    };
+                    let mut storage_writer =
+                        Repeater::new(rank, nranks, &mut worker, storage_server_handle);
 
                     // Sender loop
-                    let mut send = false;
                     loop {
                         tcp_worker_run(&mut worker);
                         if let Ok((data, state)) = msg_receiver.try_recv() {
@@ -247,19 +248,11 @@ impl Net for BaguaNet {
                                 .tcp_write(&mut worker, data)
                                 .expect("tcp_write failed");
 
-                            // For now it's a hack to ignore the first
-                            // iteration. GradBuckets are only setup after the
-                            // first iteration.
-                            if _rank == 0 && !send && data.len() == 262144 {
-                                send = true;
-                                println!(":: Enabling gradient replication to storage server");
-                            }
-                            if send {
-                                storage_writer
-                                    .as_mut()
-                                    .unwrap()
-                                    .tcp_write(&mut worker, data)
-                                    .expect("tcp_write failed");
+                            // Storage write only works when "storage" feature
+                            // is enabled; otherwise it's a noop.
+                            let chunk_offset = state.lock().unwrap().chunk_tag;
+                            if !chunk_offset.is_negative() {
+                                storage_writer.repeat_tcp_write(&mut worker, chunk_offset, data);
                             }
 
                             match state.lock() {
@@ -293,6 +286,7 @@ impl Net for BaguaNet {
         &mut self,
         send_comm_id: SocketSendCommID,
         data: &'static [u8],
+        chunk_tag: i32,
     ) -> Result<SocketRequestID, BaguaNetError> {
         let request_id = self.socket_request_next_id;
         self.socket_request_next_id += 1;
@@ -301,6 +295,7 @@ impl Net for BaguaNet {
             nsubtasks: 1,
             completed_subtasks: 0,
             nbytes_transferred: 0,
+            chunk_tag,
             err: None,
         }));
         self.socket_request_map.insert(
@@ -328,6 +323,7 @@ impl Net for BaguaNet {
             nsubtasks: 1,
             completed_subtasks: 0,
             nbytes_transferred: 0,
+            chunk_tag: 0,
             err: None,
         }));
         self.socket_request_map.insert(

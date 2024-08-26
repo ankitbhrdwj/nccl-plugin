@@ -32,7 +32,7 @@ struct Buffer
 {
   uint8_t *data;
   uintptr_t len;
-  int16_t rank;
+  int chunk_tag;
 };
 
 extern "C"

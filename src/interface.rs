@@ -85,6 +85,7 @@ pub trait Net {
         &mut self,
         send_comm_id: SocketSendCommID,
         data: &'static [u8],
+        chunk_tag: i32,
     ) -> Result<SocketRequestID, BaguaNetError>;
 
     fn irecv(

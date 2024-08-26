@@ -525,6 +525,7 @@ impl Net for BaguaNet {
         &mut self,
         send_comm_id: SocketSendCommID,
         data: &'static [u8],
+        _chunk_tag: i32,
     ) -> Result<SocketRequestID, BaguaNetError> {
         let tracer = opentelemetry::global::tracer("bagua-net");
         let mut span = tracer

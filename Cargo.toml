@@ -38,3 +38,9 @@ futures = "0.3"
 libtcp = { path = "../libtpa/bindings" }
 anyhow = "1"
 rand = "0.8"
+serde = { version = "1.0.197", features = ["derive"] }
+bincode = "1.3.3"
+
+
+[features]
+storage = []

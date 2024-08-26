@@ -232,7 +232,7 @@ pub extern "C" fn bagua_net_c_accept(
 pub struct Buffer {
     data: *mut u8,
     len: usize,
-    rank: i16,
+    chunk_tag: i32,
 }
 
 /// Error code
@@ -257,7 +257,7 @@ pub extern "C" fn bagua_net_c_isend(
             .inner
             .lock()
             .unwrap()
-            .isend(send_comm_id, data)
+            .isend(send_comm_id, data, buf.chunk_tag)
             .unwrap();
     }
     0
