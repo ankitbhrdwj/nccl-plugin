@@ -66,5 +66,6 @@ impl Repeater {
             .unwrap()
             .tcp_write(worker, buf)
             .expect("failed to write data");
+        super::tcp::tcp_worker_run(worker);
     }
 }
