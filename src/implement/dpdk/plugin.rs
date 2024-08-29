@@ -5,6 +5,7 @@ use crate::interface::{
 use crate::utils;
 use nix::sys::socket::{InetAddr, IpAddr, SockAddr};
 use std::collections::HashMap;
+use std::str::FromStr;
 
 use rand::Rng;
 use std::sync::Mutex;
@@ -84,6 +85,9 @@ impl BaguaNet {
             .unwrap_or("-1".to_string())
             .parse()
             .unwrap();
+        let storage_ip: String =
+            std::env::var("STORAGE_SERVER_IP").unwrap_or("10.2.1.28".to_string());
+        let storage_ip = std::net::Ipv4Addr::from_str(&storage_ip).unwrap().octets();
 
         let devices = utils::find_interfaces();
         if devices.is_empty() {
@@ -106,7 +110,12 @@ impl BaguaNet {
             recv_comm_map: Default::default(),
             socket_request_next_id: 0,
             socket_request_map: Default::default(),
-            storage_server_ip: IpAddr::new_v4(10, 2, 1, 28),
+            storage_server_ip: IpAddr::new_v4(
+                storage_ip[0],
+                storage_ip[1],
+                storage_ip[2],
+                storage_ip[3],
+            ),
             storage_server_port: if rank == 0 { 5678 } else { 5682 }, // Offset by 4, for 4 channels.
         })
     }
