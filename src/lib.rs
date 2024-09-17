@@ -11,10 +11,10 @@ mod utils;
 use ffi_convert::{AsRust, CDrop, CReprOf};
 use implement::{dpdk, nthread_per_socket_backend, tokio_backend};
 use interface::{NCCLNetProperties, Net, SocketHandle};
-use std::sync::{Arc, Mutex};
+use std::{rc::Rc, sync::Mutex};
 
 pub struct BaguaNetC {
-    inner: Arc<Mutex<Box<dyn Net>>>,
+    inner: Rc<Mutex<Box<dyn Net>>>,
 }
 
 #[no_mangle]
@@ -31,7 +31,7 @@ pub extern "C" fn bagua_net_c_create() -> *mut BaguaNetC {
         }
     };
     let obj = BaguaNetC {
-        inner: Arc::new(Mutex::new(bagua_net)),
+        inner: Rc::new(Mutex::new(bagua_net)),
     };
 
     // into_raw turns the Box into a *mut, which the borrow checker

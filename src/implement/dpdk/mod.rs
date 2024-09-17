@@ -1,6 +1,6 @@
 mod plugin;
-mod tcp;
 mod repeater;
+mod tcp;
 
 pub use libtcp::ffi;
 pub use plugin::*;

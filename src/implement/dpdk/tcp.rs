@@ -185,6 +185,7 @@ pub fn tcp_accept_burst(worker: &mut Box<tpa_worker>, sid: &mut i32) -> i32 {
     unsafe { libtcp::ffi::tpa_accept_burst(worker.as_mut(), sid, 1) }
 }
 
+#[allow(dead_code)]
 pub fn tpa_ip_to_str(ip: tpa_ip) -> String {
     unsafe { std::net::Ipv4Addr::from_bits(ip.__bindgen_anon_1.u32_[3]).to_string() }
 }

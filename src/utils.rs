@@ -157,6 +157,7 @@ pub fn nonblocking_write_all(stream: &mut std::net::TcpStream, mut buf: &[u8]) -
     Ok(())
 }
 
+#[allow(dead_code)]
 pub fn nonblocking_write_vectored(
     stream: &mut std::net::TcpStream,
     bufs: &[std::io::IoSlice],

@@ -8,15 +8,15 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 use rand::Rng;
-use std::sync::Mutex;
 use std::sync::{Arc, Barrier};
+use std::sync::{Mutex, RwLock};
 
 use super::tcp::*;
 use super::{ffi::*, Repeater};
 
 enum NcclPtr {
     HostPtr = 1,
-    CudaPtr = 2,
+    _CudaPtr = 2,
 }
 
 #[derive(Debug)]
@@ -32,7 +32,8 @@ pub struct RequestState {
 pub struct SocketSendComm {
     pub sid: i32,
     pub _tcp_sender: Arc<std::thread::JoinHandle<()>>,
-    pub msg_sender: flume::Sender<(&'static [u8], Arc<Mutex<RequestState>>)>,
+    pub msg_sender: flume::Sender<(&'static [u8], Arc<RwLock<RequestState>>)>,
+    pub _repeater: Repeater,
 }
 
 #[derive(Clone)]
@@ -43,7 +44,7 @@ pub struct SocketRecvComm {
 }
 
 pub struct SocketSendRequest {
-    pub state: Arc<Mutex<RequestState>>,
+    pub state: Arc<RwLock<RequestState>>,
 }
 
 pub struct SocketRecvRequest {
@@ -74,6 +75,9 @@ pub struct BaguaNet {
 
 impl BaguaNet {
     const DEFAULT_SOCKET_MAX_COMMS: i32 = 65536;
+    #[cfg(feature = "storage")]
+    const NR_WORKERS: i32 = 12;
+    #[cfg(not(feature = "storage"))]
     const NR_WORKERS: i32 = 8;
 
     pub fn new() -> Result<BaguaNet, BaguaNetError> {
@@ -86,7 +90,7 @@ impl BaguaNet {
             .parse()
             .unwrap();
         let storage_ip: String =
-            std::env::var("STORAGE_SERVER_IP").unwrap_or("10.2.1.28".to_string());
+            std::env::var("STORAGE_SERVER_IP").unwrap_or("10.40.1.104".to_string());
         let storage_ip = std::net::Ipv4Addr::from_str(&storage_ip).unwrap().octets();
 
         let devices = utils::find_interfaces();
@@ -230,20 +234,26 @@ impl Net for BaguaNet {
             )),
         };
 
+        let (msg_repeater_sender, msg_repeater_receiver) = flume::unbounded();
         let (msg_sender, msg_receiver) = flume::unbounded();
-        let rank = self.rank;
-        let nranks = self.nranks;
+
+        let _repeater = Repeater::new(
+            self.rank,
+            self.nranks,
+            msg_repeater_receiver,
+            storage_server_handle.clone(),
+        );
+
         self.send_comm_map.insert(
             id,
             SocketSendComm {
                 sid: 0,
                 msg_sender,
+                _repeater,
                 _tcp_sender: Arc::new(std::thread::spawn(move || {
                     let mut worker = tcp_worker_init();
                     let mut data_writer = TCPWriter::new(&mut worker, socket_handle.clone(), None);
                     let mut ctrl_writer = TCPWriter::new(&mut worker, socket_handle, None);
-                    let mut storage_writer =
-                        Repeater::new(rank, nranks, &mut worker, storage_server_handle);
 
                     // Sender loop
                     loop {
@@ -259,12 +269,14 @@ impl Net for BaguaNet {
 
                             // Storage write only works when "storage" feature
                             // is enabled; otherwise it's a noop.
-                            let chunk_offset = state.lock().unwrap().chunk_tag;
-                            if !chunk_offset.is_negative() {
-                                storage_writer.repeat_tcp_write(&mut worker, chunk_offset, data);
+                            let chunk_offset = state.read().unwrap().chunk_tag;
+                            if cfg!(feature = "storage") && !chunk_offset.is_negative() {
+                                msg_repeater_sender
+                                    .send((chunk_offset, data, state.clone()))
+                                    .unwrap();
                             }
 
-                            match state.lock() {
+                            match state.write() {
                                 Ok(mut state) => {
                                     state.completed_subtasks += 1;
                                     state.nbytes_transferred += data.len();
@@ -300,8 +312,12 @@ impl Net for BaguaNet {
         let request_id = self.socket_request_next_id;
         self.socket_request_next_id += 1;
         let send_comm = self.send_comm_map.get(&send_comm_id).unwrap();
-        let task_state = Arc::new(Mutex::new(RequestState {
-            nsubtasks: 1,
+        let mut nsubtasks = 1;
+        if cfg!(feature = "storage") && !chunk_tag.is_negative() {
+            nsubtasks = 2;
+        }
+        let task_state = Arc::new(RwLock::new(RequestState {
+            nsubtasks,
             completed_subtasks: 0,
             nbytes_transferred: 0,
             chunk_tag,
@@ -351,7 +367,7 @@ impl Net for BaguaNet {
         let request = self.socket_request_map.get_mut(&request_id).unwrap();
         let ret = match request {
             SocketRequest::SendRequest(send_req) => {
-                let state = send_req.state.lock().unwrap();
+                let state = send_req.state.read().unwrap();
                 if let Some(err) = state.err.clone() {
                     return Err(err);
                 }
