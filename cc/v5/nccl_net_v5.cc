@@ -105,7 +105,13 @@ __hidden ncclResult_t baguaNetAccept_v5(void *listenComm, void **recvComm)
 __hidden ncclResult_t baguaNetRegMr_v5(void *comm, void *data, int size, int type, void **mhandle)
 {
     NCCL_TRACE(NCCL_ALL, "baguaNetRegMr_v5, comm=%p, data=%p, type=%d", comm, data, type);
-    return (type != NCCL_PTR_HOST) ? ncclInternalError : ncclSuccess;
+    int ret = BaguaNet::instance().reg_mr(comm, data, size, type, mhandle);
+    if (ret != 0)
+    {
+        NCCL_WARN("baguaNetRegMr_v5 failed, ret=%d", ret);
+        return ncclInternalError;
+    }
+    return ncclSuccess;
 }
 
 __hidden ncclResult_t baguaNetDeregMr_v5(void *comm, void *mhandle)

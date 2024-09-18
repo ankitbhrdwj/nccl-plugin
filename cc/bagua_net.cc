@@ -1,4 +1,5 @@
 #include "bagua_net.h"
+#include "nccl_types.h"
 
 int32_t BaguaNet::devices(int32_t *ndev)
 {
@@ -68,6 +69,17 @@ int32_t BaguaNet::accept(void *listen_comm, void **recv_comm)
 
     *recv_comm = recv_comm_id.release();
     return 0;
+}
+
+int32_t BaguaNet::reg_mr(void *comm, void *data, int size, int type, void **mhandle)
+{
+    uintptr_t comm_id = *static_cast<uintptr_t *>(comm);
+    int32_t ret = bagua_net_c_reg_memory(inner.get(), comm_id, static_cast<uint8_t *>(data), size, type);
+    if (ret != 0)
+    {
+        return ncclInternalError;
+    }
+    return ncclSuccess;
 }
 
 int32_t BaguaNet::isend(void *send_comm, void *data, int size, int tag, void *mhandle, void **request)

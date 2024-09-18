@@ -11,7 +11,7 @@ mod utils;
 use ffi_convert::{AsRust, CDrop, CReprOf};
 use implement::{dpdk, nthread_per_socket_backend, tokio_backend};
 use interface::{NCCLNetProperties, Net, SocketHandle};
-use std::{rc::Rc, sync::Mutex};
+use std::{os::raw::c_void, rc::Rc, sync::Mutex};
 
 pub struct BaguaNetC {
     inner: Rc<Mutex<Box<dyn Net>>>,
@@ -224,6 +224,31 @@ pub extern "C" fn bagua_net_c_accept(
 
     unsafe {
         *recv_comm_id = (*ptr).inner.lock().unwrap().accept(listen_comm_id).unwrap();
+    }
+    0
+}
+
+#[no_mangle]
+pub extern "C" fn bagua_net_c_reg_memory(
+    ptr: *mut BaguaNetC,
+    comm_id: usize,
+    data: *mut c_void,
+    size: usize,
+    ptr_type: i32,
+) -> i32 {
+    // First, we **must** check to see if the pointer is null.
+    if ptr.is_null() {
+        // Do nothing.
+        return -1;
+    }
+
+    unsafe {
+        (*ptr)
+            .inner
+            .lock()
+            .unwrap()
+            .reg_mr(comm_id, data, size, ptr_type)
+            .unwrap();
     }
     0
 }

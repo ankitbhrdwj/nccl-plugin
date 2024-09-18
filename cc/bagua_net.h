@@ -73,6 +73,8 @@ extern "C"
   /// -1: null pointer
   int32_t bagua_net_c_accept(BaguaNetC *ptr, uintptr_t listen_comm_id, uintptr_t *recv_comm_id);
 
+  uint32_t bagua_net_c_reg_memory(BaguaNetC *ptr, uintptr_t comm_id, void *data, int size, int type);
+
   /// Error code
   /// 0: success
   /// -1: null pointer
@@ -132,6 +134,8 @@ public:
   int32_t connect(int32_t dev_id, void *handle, void **send_comm);
 
   int32_t accept(void *listen_comm, void **recv_comm);
+
+  int32_t reg_mr(void *comm, void *data, int size, int type, void **mhandle);
 
   int32_t isend(void *send_comm, void *data, int size, int tag, void *mhandle, void **request);
 
