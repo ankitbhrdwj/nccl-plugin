@@ -1,4 +1,7 @@
-use std::sync::{Arc, RwLock};
+use std::sync::{
+    atomic::{AtomicBool, Ordering::Relaxed},
+    Arc, RwLock,
+};
 
 use super::{
     tcp::{tcp_worker_init, TCPWriter},
@@ -10,6 +13,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone)]
 pub struct Repeater {
     pub _tcp_sender: Option<Arc<std::thread::JoinHandle<()>>>,
+    shutdown: Arc<AtomicBool>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -26,9 +30,14 @@ impl Repeater {
         socket: SocketHandle,
     ) -> Self {
         if cfg!(not(feature = "storage")) || (rank != 0 && rank != nranks - 1) {
-            return Self { _tcp_sender: None };
+            return Self {
+                _tcp_sender: None,
+                shutdown: Arc::new(AtomicBool::new(false)),
+            };
         }
+        let shutdown = Arc::new(AtomicBool::new(false));
 
+        let signal = shutdown.clone();
         let _tcp_sender = Some(Arc::new(std::thread::spawn(move || {
             let mut worker = tcp_worker_init();
             let mut ctrl_writer = TCPWriter::new(&mut worker, socket.clone(), None);
@@ -36,6 +45,9 @@ impl Repeater {
 
             loop {
                 tcp_worker_run(&mut worker);
+                if signal.load(Relaxed) {
+                    break;
+                }
                 if let Ok((chunk_offset, buf, state)) = msg_receiver.try_recv() {
                     let chunk_info = ChunkInfo {
                         chunk_offset,
@@ -62,7 +74,10 @@ impl Repeater {
                 }
             }
         })));
-        Self { _tcp_sender }
+        Self {
+            _tcp_sender,
+            shutdown: shutdown.clone(),
+        }
     }
 }
 
@@ -70,6 +85,7 @@ impl Drop for Repeater {
     fn drop(&mut self) {
         if let Some(tcp_sender) = self._tcp_sender.take() {
             tcp_sender.thread().unpark();
+            self.shutdown.store(true, Relaxed);
         }
     }
 }
