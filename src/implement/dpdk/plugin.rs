@@ -8,7 +8,6 @@ use std::collections::HashMap;
 use std::os::raw::c_void;
 use std::str::FromStr;
 
-use rand::Rng;
 use std::sync::{Arc, Barrier};
 use std::sync::{Mutex, RwLock};
 
@@ -60,6 +59,7 @@ pub enum SocketRequest {
 pub struct BaguaNet {
     pub rank: i32,
     pub nranks: i32,
+    pub start_listen_port: u16,
     devices: Vec<utils::NCCLSocketDev>,
     pub listen_comm_next_id: usize,
     pub listen_comm_map: HashMap<SocketListenCommID, Arc<Barrier>>,
@@ -92,6 +92,10 @@ impl BaguaNet {
             .unwrap_or("-1".to_string())
             .parse()
             .unwrap();
+        let start_listen_port = std::env::var("START_LISTEN_PORT")
+            .unwrap_or("41000".to_string())
+            .parse()
+            .unwrap();
         let storage_ip: String =
             std::env::var("STORAGE_SERVER_IP").unwrap_or("10.40.1.104".to_string());
         let storage_ip = std::net::Ipv4Addr::from_str(&storage_ip).unwrap().octets();
@@ -108,6 +112,7 @@ impl BaguaNet {
         Ok(BaguaNet {
             rank,
             nranks,
+            start_listen_port,
             devices: utils::find_interfaces(),
             listen_comm_next_id: 0,
             listen_comm_map: Default::default(),
@@ -170,7 +175,7 @@ impl Net for BaguaNet {
 
         let id = self.recv_comm_next_id;
         self.recv_comm_next_id += 1;
-        let port = (rand::thread_rng().gen_range(41000..64000) as u16).to_be();
+        let port = (self.start_listen_port + id as u16).to_be();
         let socket_handle = SocketHandle {
             addr: SockAddr::new_inet(InetAddr::new(addr.ip(), port)),
         };
