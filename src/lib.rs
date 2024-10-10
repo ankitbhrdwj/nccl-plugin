@@ -283,7 +283,7 @@ pub extern "C" fn bagua_net_c_isend(
             .inner
             .lock()
             .unwrap()
-            .isend(send_comm_id, data, buf.chunk_tag, buf.bucket_id)
+            .isend(send_comm_id, data, buf.bucket_id, buf.chunk_tag)
             .unwrap();
     }
     0
