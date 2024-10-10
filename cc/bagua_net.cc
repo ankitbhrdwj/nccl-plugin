@@ -88,6 +88,7 @@ int32_t BaguaNet::isend(void *send_comm, void *data, int size, int tag, void *mh
     Buffer buf{
         .data = static_cast<uint8_t *>(data),
         .len = (uintptr_t)(size),
+        .bucket_id = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(mhandle)),
         .chunk_tag = tag,
     };
     auto request_id = std::make_unique<uintptr_t>(-1);

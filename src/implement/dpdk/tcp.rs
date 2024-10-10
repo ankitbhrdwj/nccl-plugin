@@ -41,7 +41,8 @@ pub fn libtcp_config(device: &utils::NCCLSocketDev) -> Result<(), Error> {
     file.write_all(b"mask = 255.255.255.0; }\n").unwrap();
     file.write_all(format!("dpdk {{ pci = {}; }}\n", device.pci_path).as_bytes())
         .unwrap();
-    file.write_all(b"tcp { snd_queue_size = 2048; }\n").unwrap();
+    file.write_all(b"tcp { snd_queue_size = 2048; opt_seq = 1; }\n")
+        .unwrap();
     file.write_all(b"trace { enable = 0; }\n").unwrap();
     file.flush().unwrap();
     Ok(())
@@ -335,12 +336,17 @@ impl TCPWriter {
         &mut self,
         worker: &mut Box<tpa_worker>,
         buf: &[u8],
+        opt_dscp: u8,
+        opt_seq: u32,
     ) -> Result<isize, std::io::Error> {
         self.iov.iov_base = buf.as_ptr() as *mut std::ffi::c_void;
         self.iov.iov_len = buf.len() as u32;
         self.iov.iov_phys = 1; // Should be 0 for non-mlx devices
         self.iov.__bindgen_anon_1.iov_write_done = None;
         self.iov.iov_param = ptr::null_mut();
+        // Not in network order
+        self.iov.dscp_bits = opt_dscp;
+        self.iov.optional_seq = opt_seq;
 
         loop {
             tcp_worker_run(worker);

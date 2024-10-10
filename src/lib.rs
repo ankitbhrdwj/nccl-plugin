@@ -257,6 +257,7 @@ pub extern "C" fn bagua_net_c_reg_memory(
 pub struct Buffer {
     data: *mut u8,
     len: usize,
+    bucket_id: i32,
     chunk_tag: i32,
 }
 
@@ -282,7 +283,7 @@ pub extern "C" fn bagua_net_c_isend(
             .inner
             .lock()
             .unwrap()
-            .isend(send_comm_id, data, buf.chunk_tag)
+            .isend(send_comm_id, data, buf.chunk_tag, buf.bucket_id)
             .unwrap();
     }
     0

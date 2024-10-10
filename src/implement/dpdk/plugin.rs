@@ -24,6 +24,7 @@ pub struct RequestState {
     pub nsubtasks: usize,
     pub completed_subtasks: usize,
     pub nbytes_transferred: usize,
+    pub bucket_id: i32,
     pub chunk_tag: i32,
     pub err: Option<BaguaNetError>,
 }
@@ -263,21 +264,46 @@ impl Net for BaguaNet {
                     let mut data_writer = TCPWriter::new(&mut worker, socket_handle.clone(), None);
                     let mut ctrl_writer = TCPWriter::new(&mut worker, socket_handle, None);
 
+                    let mut dscp_bits = 0u8;
+                    // Make it one so that toggle for Bucket 0 makes it zero.
+                    dscp_bits |= 0x40;
+                    let mut reduced_byte_offset = 0u32;
+
+                    let mut current_active_bucket = -1;
+                    let mut next_reduced_byte_offset = 0u32;
+
                     // Sender loop
                     loop {
                         tcp_worker_run(&mut worker);
                         if let Ok((data, state)) = msg_receiver.try_recv() {
+                            let chunk_offset = state.read().unwrap().chunk_tag;
+                            let bucket_id = state.read().unwrap().bucket_id;
+
+                            if current_active_bucket != bucket_id {
+                                // Bit 6: toggle the active bucket
+                                dscp_bits ^= 0x40;
+                                current_active_bucket = bucket_id;
+                            }
+
+                            dscp_bits &= 0x7f;
+                            if !chunk_offset.is_negative() {
+                                // Bit 7: set if it's tagged
+                                dscp_bits |= 0x80;
+                                next_reduced_byte_offset = reduced_byte_offset + data.len() as u32;
+                            }
+
                             let send_nbytes = data.len().to_be_bytes();
                             ctrl_writer
-                                .tcp_write(&mut worker, &send_nbytes)
+                                .tcp_write(&mut worker, &send_nbytes, 0, 0)
                                 .expect("tcp_write failed");
                             data_writer
-                                .tcp_write(&mut worker, data)
+                                .tcp_write(&mut worker, data, dscp_bits, reduced_byte_offset)
                                 .expect("tcp_write failed");
+
+                            reduced_byte_offset = next_reduced_byte_offset;
 
                             // Storage write only works when "storage" feature
                             // is enabled; otherwise it's a noop.
-                            let chunk_offset = state.read().unwrap().chunk_tag;
                             if cfg!(feature = "storage") && !chunk_offset.is_negative() {
                                 msg_repeater_sender
                                     .send((chunk_offset, data, state.clone()))
@@ -348,6 +374,7 @@ impl Net for BaguaNet {
         &mut self,
         send_comm_id: SocketSendCommID,
         data: &'static [u8],
+        bucket_id: i32,
         chunk_tag: i32,
     ) -> Result<SocketRequestID, BaguaNetError> {
         let request_id = self.socket_request_next_id;
@@ -361,6 +388,7 @@ impl Net for BaguaNet {
             nsubtasks,
             completed_subtasks: 0,
             nbytes_transferred: 0,
+            bucket_id,
             chunk_tag,
             err: None,
         }));
@@ -389,6 +417,7 @@ impl Net for BaguaNet {
             nsubtasks: 1,
             completed_subtasks: 0,
             nbytes_transferred: 0,
+            bucket_id: 0,
             chunk_tag: 0,
             err: None,
         }));

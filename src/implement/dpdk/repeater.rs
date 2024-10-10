@@ -55,11 +55,11 @@ impl Repeater {
                     };
                     let info_bytes = bincode::serialize(&chunk_info).unwrap();
                     ctrl_writer
-                        .tcp_write(&mut worker, &info_bytes)
+                        .tcp_write(&mut worker, &info_bytes, 0, 0)
                         .expect("failed to write chunk info");
 
                     data_writer
-                        .tcp_write(&mut worker, buf)
+                        .tcp_write(&mut worker, buf, 0, 0)
                         .expect("failed to write data");
 
                     match state.write() {

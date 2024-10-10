@@ -32,6 +32,7 @@ struct Buffer
 {
   uint8_t *data;
   uintptr_t len;
+  int bucket_id;
   int chunk_tag;
 };
 

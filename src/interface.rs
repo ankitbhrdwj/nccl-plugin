@@ -96,6 +96,7 @@ pub trait Net {
         &mut self,
         send_comm_id: SocketSendCommID,
         data: &'static [u8],
+        bucket_id: i32,
         chunk_tag: i32,
     ) -> Result<SocketRequestID, BaguaNetError>;
 
