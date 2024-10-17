@@ -176,7 +176,7 @@ impl Net for BaguaNet {
 
         let id = self.recv_comm_next_id;
         self.recv_comm_next_id += 1;
-        let port = (self.start_listen_port + id as u16).to_be();
+        let port = self.start_listen_port + id as u16;
         let socket_handle = SocketHandle {
             addr: SockAddr::new_inet(InetAddr::new(addr.ip(), port)),
         };
