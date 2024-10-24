@@ -60,6 +60,7 @@ pub enum SocketRequest {
 pub struct BaguaNet {
     pub rank: i32,
     pub nranks: i32,
+    pub nccl_nchannels: i32,
     pub start_listen_port: u16,
     devices: Vec<utils::NCCLSocketDev>,
     pub listen_comm_next_id: usize,
@@ -101,6 +102,12 @@ impl BaguaNet {
             std::env::var("STORAGE_SERVER_IP").unwrap_or("10.40.1.104".to_string());
         let storage_ip = std::net::Ipv4Addr::from_str(&storage_ip).unwrap().octets();
 
+        let nccl_nchannels: i32 = std::env::var("NCCL_MAX_NCHANNELS")
+            .unwrap_or("4".to_string())
+            .parse()
+            .unwrap();
+        assert!(BaguaNet::NR_WORKERS >= 2 * nccl_nchannels);
+
         let devices = utils::find_interfaces();
         if devices.is_empty() {
             return Err(BaguaNetError::InnerError(
@@ -113,6 +120,7 @@ impl BaguaNet {
         Ok(BaguaNet {
             rank,
             nranks,
+            nccl_nchannels,
             start_listen_port,
             devices: utils::find_interfaces(),
             listen_comm_next_id: 0,
@@ -176,7 +184,8 @@ impl Net for BaguaNet {
 
         let id = self.recv_comm_next_id;
         self.recv_comm_next_id += 1;
-        let port = self.start_listen_port + id as u16;
+        let port = self.start_listen_port + id as u16 + (self.rank * self.nccl_nchannels) as u16;
+        println!("Rank {} worker {} is listening on {}", self.rank, id, port);
         let socket_handle = SocketHandle {
             addr: SockAddr::new_inet(InetAddr::new(addr.ip(), port)),
         };
@@ -267,10 +276,10 @@ impl Net for BaguaNet {
                     let mut dscp_bits = 0u8;
                     // Make it one so that toggle for Bucket 0 makes it zero.
                     dscp_bits |= 0x40;
-                    let mut reduced_byte_offset = 0u32;
+                    let mut reduced_byte_offset = 1u32;
 
                     let mut current_active_bucket = -1;
-                    let mut next_reduced_byte_offset = 0u32;
+                    let mut next_reduced_byte_offset = 1u32;
 
                     // Sender loop
                     loop {
