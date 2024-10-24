@@ -48,7 +48,7 @@ pub fn libtcp_config(device: &utils::NCCLSocketDev) -> Result<(), Error> {
     #[cfg(not(feature = "storage"))]
     file.write_all(format!("dpdk {{ pci = {}; }}\n", device.pci_path).as_bytes())
         .unwrap();
-    file.write_all(b"tcp { snd_queue_size = 2048; tso = 0; opt_seq = 1; usr_snd_mss = 8192; }\n")
+    file.write_all(b"tcp { snd_queue_size = 2048; tso = 0; opt_seq = 1; usr_snd_mss = 8192; time_wait = 10000000; rto_min = 10000000; }\n")
         .unwrap();
     file.write_all(b"trace { enable = 0; }\n").unwrap();
     file.flush().unwrap();
