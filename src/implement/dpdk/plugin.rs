@@ -14,6 +14,8 @@ use std::sync::{Mutex, RwLock};
 use super::tcp::*;
 use super::{ffi::*, Repeater};
 
+const WARMPUP_BUCKETID: i32 = 0;
+
 enum NcclPtr {
     HostPtr = 1,
     _CudaPtr = 2,
@@ -295,7 +297,7 @@ impl Net for BaguaNet {
                             }
 
                             dscp_bits &= 0x7f;
-                            if !chunk_offset.is_negative() {
+                            if !chunk_offset.is_negative() && bucket_id != WARMPUP_BUCKETID {
                                 // Bit 7: set if it's tagged
                                 dscp_bits |= 0x80;
                                 next_reduced_byte_offset = reduced_byte_offset + data.len() as u32;
