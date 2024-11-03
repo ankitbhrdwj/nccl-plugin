@@ -73,7 +73,9 @@ pub struct BaguaNet {
     pub recv_comm_map: HashMap<SocketRecvCommID, SocketRecvComm>,
     pub socket_request_next_id: usize,
     pub socket_request_map: HashMap<SocketRequestID, SocketRequest>,
+    pub num_storage: u8,
 
+    // These are for explicit TCP connections to storage servers.
     pub storage_server_ip: IpAddr,
     pub storage_server_port: u16,
 }
@@ -104,6 +106,12 @@ impl BaguaNet {
             std::env::var("STORAGE_SERVER_IP").unwrap_or("10.40.1.104".to_string());
         let storage_ip = std::net::Ipv4Addr::from_str(&storage_ip).unwrap().octets();
 
+        let num_storage: u8 = std::env::var("NUM_STORAGE")
+            .unwrap_or("1".to_string())
+            .parse()
+            .unwrap();
+        assert!(num_storage <= 8);
+
         let nccl_nchannels: i32 = std::env::var("NCCL_MAX_NCHANNELS")
             .unwrap_or("4".to_string())
             .parse()
@@ -133,6 +141,7 @@ impl BaguaNet {
             recv_comm_map: Default::default(),
             socket_request_next_id: 0,
             socket_request_map: Default::default(),
+            num_storage,
             storage_server_ip: IpAddr::new_v4(
                 storage_ip[0],
                 storage_ip[1],
@@ -264,6 +273,7 @@ impl Net for BaguaNet {
             storage_server_handle.clone(),
         );
 
+        let num_storage = self.num_storage;
         self.send_comm_map.insert(
             id,
             SocketSendComm {
@@ -275,13 +285,12 @@ impl Net for BaguaNet {
                     let mut data_writer = TCPWriter::new(&mut worker, socket_handle.clone(), None);
                     let mut ctrl_writer = TCPWriter::new(&mut worker, socket_handle, None);
 
-                    let mut dscp_bits = 0u8;
                     // Make it one so that toggle for Bucket 0 makes it zero.
-                    dscp_bits |= 0x40;
-                    let mut reduced_byte_offset = 1u32;
-
+                    let mut sid = 0u8;
                     let mut current_active_bucket = -1;
-                    let mut next_reduced_byte_offset = 1u32;
+
+                    let mut next_reduced_byte_offsets = vec![1u32; num_storage as usize];
+                    let mut reduced_byte_offsets = vec![1u32; num_storage as usize];
 
                     // Sender loop
                     loop {
@@ -290,17 +299,28 @@ impl Net for BaguaNet {
                             let chunk_offset = state.read().unwrap().chunk_tag;
                             let bucket_id = state.read().unwrap().bucket_id;
 
-                            if current_active_bucket != bucket_id {
-                                // Bit 6: toggle the active bucket
-                                dscp_bits ^= 0x40;
-                                current_active_bucket = bucket_id;
-                            }
+                            // Bit 0 and 1: ECN, Bit 2 - 6: Storage ID, Bit 7: Tagged
+                            let mut dscp_bits = 0u8;
+                            if bucket_id != WARMPUP_BUCKETID {
+                                match bucket_id {
+                                    1 => {
+                                        sid = 0;
+                                        current_active_bucket = bucket_id;
+                                    }
+                                    _ => {
+                                        if current_active_bucket != bucket_id {
+                                            sid = (sid + 1) % num_storage;
+                                            current_active_bucket = bucket_id;
+                                        }
+                                    }
+                                }
 
-                            dscp_bits &= 0x7f;
-                            if !chunk_offset.is_negative() && bucket_id != WARMPUP_BUCKETID {
-                                // Bit 7: set if it's tagged
-                                dscp_bits |= 0x80;
-                                next_reduced_byte_offset = reduced_byte_offset + data.len() as u32;
+                                if !chunk_offset.is_negative() {
+                                    dscp_bits |= sid << 2; // Bit 2 - 6: Storage ID
+                                    dscp_bits |= 0x80; // Bit 7: set if it's tagged
+                                    next_reduced_byte_offsets[sid as usize] =
+                                        reduced_byte_offsets[sid as usize] + data.len() as u32;
+                                }
                             }
 
                             let send_nbytes = data.len().to_be_bytes();
@@ -308,10 +328,16 @@ impl Net for BaguaNet {
                                 .tcp_write(&mut worker, &send_nbytes, 0, 0)
                                 .expect("tcp_write failed");
                             data_writer
-                                .tcp_write(&mut worker, data, dscp_bits, reduced_byte_offset)
+                                .tcp_write(
+                                    &mut worker,
+                                    data,
+                                    dscp_bits,
+                                    reduced_byte_offsets[sid as usize],
+                                )
                                 .expect("tcp_write failed");
 
-                            reduced_byte_offset = next_reduced_byte_offset;
+                            reduced_byte_offsets[sid as usize] =
+                                next_reduced_byte_offsets[sid as usize];
 
                             // Storage write only works when "storage" feature
                             // is enabled; otherwise it's a noop.
