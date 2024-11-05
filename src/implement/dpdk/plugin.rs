@@ -84,10 +84,7 @@ impl BaguaNet {
     const DEFAULT_SOCKET_MAX_COMMS: i32 = 65536;
     const PAGE_SIZE: usize = 4096;
 
-    #[cfg(feature = "storage")]
     const NR_WORKERS: i32 = 12;
-    #[cfg(not(feature = "storage"))]
-    const NR_WORKERS: i32 = 8;
 
     pub fn new() -> Result<BaguaNet, BaguaNetError> {
         let rank: i32 = std::env::var("RANK")

@@ -40,14 +40,10 @@ pub fn libtcp_config(device: &utils::NCCLSocketDev) -> Result<(), Error> {
     file.write_all(format!("gw = {}; ", gw).as_bytes()).unwrap();
     file.write_all(b"mask = 255.255.255.0; }\n").unwrap();
     // Increase memory size when using large number of connections
-    #[cfg(feature = "storage")]
     file.write_all(
         format!("dpdk {{ pci = {}; socket-mem = 8192; }}\n", device.pci_path).as_bytes(),
     )
     .unwrap();
-    #[cfg(not(feature = "storage"))]
-    file.write_all(format!("dpdk {{ pci = {}; }}\n", device.pci_path).as_bytes())
-        .unwrap();
     file.write_all(b"tcp { snd_queue_size = 2048; tso = 0; opt_seq = 1; usr_snd_mss = 8192; time_wait = 10000000; rto_min = 10000000; }\n")
         .unwrap();
     file.write_all(b"trace { enable = 0; }\n").unwrap();
@@ -348,7 +344,7 @@ impl TCPWriter {
     ) -> Result<isize, std::io::Error> {
         self.iov.iov_base = buf.as_ptr() as *mut std::ffi::c_void;
         self.iov.iov_len = buf.len() as u32;
-        self.iov.iov_phys = 1; // Should be 0 for non-mlx devices
+        self.iov.iov_phys = 0; // Should be 0 for non-mlx devices
         self.iov.__bindgen_anon_1.iov_write_done = None;
         self.iov.iov_param = ptr::null_mut();
         // Not in network order
