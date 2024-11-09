@@ -39,7 +39,6 @@ pub fn libtcp_config(device: &utils::NCCLSocketDev) -> Result<(), Error> {
     file.write_all(format!("ip = {}; ", ip).as_bytes()).unwrap();
     file.write_all(format!("gw = {}; ", gw).as_bytes()).unwrap();
     file.write_all(b"mask = 255.255.255.0; }\n").unwrap();
-    // Increase memory size when using large number of connections
     file.write_all(
         format!("dpdk {{ pci = {}; socket-mem = 8192; }}\n", device.pci_path).as_bytes(),
     )
