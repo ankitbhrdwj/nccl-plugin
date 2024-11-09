@@ -1,5 +1,4 @@
 use nix::sys::socket::{IpAddr, Ipv4Addr, SockAddr};
-use std::os::raw::c_void;
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone)]
@@ -81,16 +80,6 @@ pub trait Net {
         &mut self,
         listen_comm_id: SocketListenCommID,
     ) -> Result<SocketRecvCommID, BaguaNetError>;
-
-    fn reg_mr(
-        &mut self,
-        _comm_id: usize,
-        _base_ptr: *mut c_void,
-        _size: usize,
-        _ptr_type: i32,
-    ) -> Result<usize, BaguaNetError> {
-        Ok(0)
-    }
 
     fn isend(
         &mut self,

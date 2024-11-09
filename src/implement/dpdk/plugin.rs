@@ -5,7 +5,6 @@ use crate::interface::{
 use crate::utils;
 use nix::sys::socket::{InetAddr, IpAddr, SockAddr};
 use std::collections::HashMap;
-use std::os::raw::c_void;
 use std::str::FromStr;
 
 use std::sync::{Arc, Barrier};
@@ -82,8 +81,6 @@ pub struct BaguaNet {
 
 impl BaguaNet {
     const DEFAULT_SOCKET_MAX_COMMS: i32 = 65536;
-    const PAGE_SIZE: usize = 4096;
-
     const NR_WORKERS: i32 = 12;
 
     pub fn new() -> Result<BaguaNet, BaguaNetError> {
@@ -369,39 +366,6 @@ impl Net for BaguaNet {
         let barrier = self.listen_comm_map.get(&listen_comm_id).unwrap();
         barrier.wait();
         Ok(listen_comm_id)
-    }
-
-    fn reg_mr(
-        &mut self,
-        _comm_id: usize,
-        base_ptr: *mut c_void,
-        size: usize,
-        ptr_type: i32,
-    ) -> Result<usize, BaguaNetError> {
-        if ptr_type != NcclPtr::HostPtr as i32 {
-            return Err(BaguaNetError::InnerError(format!(
-                "Unsupported pointer type {}",
-                ptr_type
-            )));
-        };
-
-        // This call internally checks if the NIC supports it or not.
-        let ret = unsafe {
-            tpa_extmem_register(
-                base_ptr,
-                size,
-                std::ptr::null_mut(),
-                (size / BaguaNet::PAGE_SIZE) as i32,
-                BaguaNet::PAGE_SIZE,
-            )
-        };
-        if ret < 0 {
-            return Err(BaguaNetError::InnerError(format!(
-                "tpa_extmem_register failed with error code {}",
-                ret
-            )));
-        }
-        Ok(0)
     }
 
     fn isend(
