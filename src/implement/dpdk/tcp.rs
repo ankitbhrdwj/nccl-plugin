@@ -40,10 +40,10 @@ pub fn libtcp_config(device: &utils::NCCLSocketDev) -> Result<(), Error> {
     file.write_all(format!("gw = {}; ", gw).as_bytes()).unwrap();
     file.write_all(b"mask = 255.255.255.0; }\n").unwrap();
     file.write_all(
-        format!("dpdk {{ pci = {}; socket-mem = 8192; }}\n", device.pci_path).as_bytes(),
+        format!("dpdk {{ pci = {}; socket-mem = 1024,8192; numa = 1; }}\n", device.pci_path).as_bytes(),
     )
     .unwrap();
-    file.write_all(b"tcp { snd_queue_size = 2048; tso = 0; opt_seq = 1; usr_snd_mss = 8192; time_wait = 10000000; rto_min = 10000000; }\n")
+    file.write_all(b"tcp { opt_seq = 1; snd_queue_size = 2048; rcv_queue_size = 8192; tso = 0; usr_snd_mss = 8704; }\n")
         .unwrap();
     file.write_all(b"trace { enable = 0; }\n").unwrap();
     file.flush().unwrap();

@@ -1,3 +1,5 @@
+use nix::sched::{sched_setaffinity, CpuSet};
+use nix::unistd::Pid;
 use crate::interface::{
     BaguaNetError, NCCLNetProperties, Net, SocketHandle, SocketListenCommID, SocketRecvCommID,
     SocketRequestID, SocketSendCommID,
@@ -43,6 +45,12 @@ pub struct SocketRecvComm {
     pub sid: i32,
     pub _tcp_reciever: Arc<std::thread::JoinHandle<()>>,
     pub msg_sender: flume::Sender<(&'static mut [u8], Arc<Mutex<RequestState>>)>,
+}
+
+pub fn set_affinity(coreid: usize) {
+    let mut cpu_set = CpuSet::new();
+    cpu_set.set(coreid).unwrap();
+    sched_setaffinity(Pid::from_raw(0), &cpu_set).unwrap();
 }
 
 pub struct SocketSendRequest {
@@ -208,6 +216,7 @@ impl Net for BaguaNet {
                     tcp_listen(socket_handle, None).expect("tcp_listen failed");
                     let mut data_reader = TCPReader::new(&mut worker);
                     let mut ctrl_reader = TCPReader::new(&mut worker);
+                    set_affinity(id + 8);
                     b.wait();
 
                     // Reciever loop
@@ -276,6 +285,7 @@ impl Net for BaguaNet {
                 _repeater,
                 _tcp_sender: Arc::new(std::thread::spawn(move || {
                     let mut worker = tcp_worker_init();
+                    set_affinity(id+12);
                     let mut data_writer = TCPWriter::new(&mut worker, socket_handle.clone(), None);
                     let mut ctrl_writer = TCPWriter::new(&mut worker, socket_handle, None);
 
