@@ -187,8 +187,16 @@ impl Net for BaguaNet {
 
         let listen_id = self.listen_comm_next_id;
         self.listen_comm_next_id += 1;
+
+        // To sync connection establishment and nccl proxy to actually accept
+        // connections.
         let barrier = Arc::new(Barrier::new(2));
         self.listen_comm_map.insert(listen_id, barrier.clone());
+
+        // To sync worker to be ready before sending port to nccl, which I think
+        // is used by nccl to send to the other workers as metadata for
+        // connection.
+        let worker_ready = Arc::new(Barrier::new(2));
 
         let id = self.recv_comm_next_id;
         self.recv_comm_next_id += 1;
@@ -201,6 +209,7 @@ impl Net for BaguaNet {
 
         let (msg_sender, msg_receiver) = flume::unbounded();
         let b = barrier.clone();
+        let worker_b = worker_ready.clone();
         self.recv_comm_map.insert(
             id,
             SocketRecvComm {
@@ -209,6 +218,8 @@ impl Net for BaguaNet {
                 _tcp_reciever: Arc::new(std::thread::spawn(move || {
                     let mut worker = tcp_worker_init();
                     tcp_listen(socket_handle, None).expect("tcp_listen failed");
+                    worker_b.wait();
+
                     let mut data_reader = TCPReader::new(&mut worker);
                     let mut ctrl_reader = TCPReader::new(&mut worker);
                     b.wait();
@@ -242,6 +253,7 @@ impl Net for BaguaNet {
             },
         );
 
+        worker_ready.wait();
         Ok((handle, id))
     }
 
