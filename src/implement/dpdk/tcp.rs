@@ -40,10 +40,10 @@ pub fn libtcp_config(device: &utils::NCCLSocketDev) -> Result<(), Error> {
     file.write_all(format!("gw = {}; ", gw).as_bytes()).unwrap();
     file.write_all(b"mask = 255.255.255.0; }\n").unwrap();
     file.write_all(
-        format!("dpdk {{ pci = {}; socket-mem = 8192; }}\n", device.pci_path).as_bytes(),
+        format!("dpdk {{ pci = {}; socket-mem = 8192,8192; numa = 1; }}\n", device.pci_path).as_bytes(),
     )
     .unwrap();
-    file.write_all(b"tcp { snd_queue_size = 2048; tso = 0; opt_seq = 1; usr_snd_mss = 8192; time_wait = 10000000; rto_min = 10000000; }\n")
+    file.write_all(b"tcp { snd_queue_size = 2048; tso = 1; opt_seq = 1; usr_snd_mss = 8832; opt_sack = 1;  }\n")
         .unwrap();
     file.write_all(b"trace { enable = 0; }\n").unwrap();
     file.flush().unwrap();
@@ -220,7 +220,7 @@ pub fn tcp_event_poll(
     maxevents: i32,
 ) -> i32 {
     tcp_worker_run(worker);
-    assert!(events.len() as i32 >= maxevents);
+    // assert!(events.len() as i32 >= maxevents);
     unsafe { libtcp::ffi::tpa_event_poll(worker.as_mut(), events.as_mut_ptr(), maxevents) }
 }
 
@@ -256,7 +256,7 @@ impl TCPReader {
         buf: &mut [u8],
         size: usize,
     ) -> Result<isize, std::io::Error> {
-        assert!(buf.len() >= size);
+        // assert!(buf.len() >= size);
         let mut buf = &mut buf[..size];
         if self.partial.is_some() {
             let partial = self.partial.take().unwrap();
@@ -269,6 +269,7 @@ impl TCPReader {
             buf = &mut buf[len..];
         }
 
+        // let buflen = buf.len();
         while !buf.is_empty() {
             self.iov.iov_len = 0;
             let ret = unsafe { tpa_zreadv(self.fd, &mut self.iov, 1) };
@@ -282,10 +283,14 @@ impl TCPReader {
                 };
                 let tmp = buf;
                 if src.len() <= tmp.len() {
-                    tmp[..src.len()].copy_from_slice(src);
+                    //if buflen < 8192 {
+                        tmp[..src.len()].copy_from_slice(src);
+                    //}
                     buf = &mut tmp[src.len()..];
                 } else {
-                    tmp.copy_from_slice(&src[..tmp.len()]);
+                    //if buflen < 8192 {
+                        tmp.copy_from_slice(&src[..tmp.len()]);
+                    // }
                     self.partial = Some(src[tmp.len()..].to_vec());
                     buf = &mut tmp[0..0];
                 }
