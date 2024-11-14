@@ -1,3 +1,5 @@
+use nix::sched::{sched_setaffinity, CpuSet};
+use nix::unistd::Pid;
 use crate::interface::{
     BaguaNetError, NCCLNetProperties, Net, SocketHandle, SocketListenCommID, SocketRecvCommID,
     SocketRequestID, SocketSendCommID,
@@ -18,6 +20,13 @@ const WARMPUP_BUCKETID: i32 = 0;
 enum NcclPtr {
     HostPtr = 1,
     _CudaPtr = 2,
+}
+
+
+pub fn set_affinity(coreid: usize) {
+    let mut cpu_set = CpuSet::new();
+    cpu_set.set(coreid).unwrap();
+    sched_setaffinity(Pid::from_raw(0), &cpu_set).unwrap();
 }
 
 #[derive(Debug)]
@@ -81,7 +90,7 @@ pub struct BaguaNet {
 
 impl BaguaNet {
     const DEFAULT_SOCKET_MAX_COMMS: i32 = 65536;
-    const NR_WORKERS: i32 = 12;
+    const NR_WORKERS: i32 = 32;
 
     pub fn new() -> Result<BaguaNet, BaguaNetError> {
         let rank: i32 = std::env::var("RANK")
@@ -214,6 +223,7 @@ impl Net for BaguaNet {
                 msg_sender,
                 _tcp_reciever: Arc::new(std::thread::spawn(move || {
                     let mut worker = tcp_worker_init();
+                    set_affinity((id + 8) % 16);
                     tcp_listen(socket_handle, None).expect("tcp_listen failed");
                     worker_b.wait();
 
@@ -288,6 +298,7 @@ impl Net for BaguaNet {
                 _repeater,
                 _tcp_sender: Arc::new(std::thread::spawn(move || {
                     let mut worker = tcp_worker_init();
+                    set_affinity(id + 16);
                     let mut data_writer = TCPWriter::new(&mut worker, socket_handle.clone(), None);
                     let mut ctrl_writer = TCPWriter::new(&mut worker, socket_handle, None);
 
