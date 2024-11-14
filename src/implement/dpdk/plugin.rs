@@ -1,11 +1,11 @@
-use nix::sched::{sched_setaffinity, CpuSet};
-use nix::unistd::Pid;
 use crate::interface::{
     BaguaNetError, NCCLNetProperties, Net, SocketHandle, SocketListenCommID, SocketRecvCommID,
     SocketRequestID, SocketSendCommID,
 };
 use crate::utils;
+use nix::sched::{sched_setaffinity, CpuSet};
 use nix::sys::socket::{InetAddr, IpAddr, SockAddr};
+use nix::unistd::Pid;
 use std::collections::HashMap;
 use std::os::raw::c_void;
 use std::str::FromStr;
@@ -22,7 +22,6 @@ enum NcclPtr {
     HostPtr = 1,
     _CudaPtr = 2,
 }
-
 
 pub fn set_affinity(coreid: usize) {
     let mut cpu_set = CpuSet::new();
