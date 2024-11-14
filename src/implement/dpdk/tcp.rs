@@ -17,6 +17,22 @@ use std::io::Write;
 use std::mem::MaybeUninit;
 use std::ptr;
 
+pub fn get_numa_node_count() -> usize {
+    let path = "/sys/devices/system/node";
+    let mut numa_node_count = 0;
+
+    if let Ok(entries) = std::fs::read_dir(path) {
+        for entry in entries {
+            if let Ok(entry) = entry {
+                if entry.file_name().to_str().unwrap_or("").starts_with("node") {
+                    numa_node_count += 1;
+                }
+            }
+        }
+    }
+    numa_node_count
+}
+
 // Don't change this function without checking
 // https://github.com/bytedance/libtpa/blob/main/doc/user_guide.rst#config-options
 pub fn libtcp_config(device: &utils::NCCLSocketDev) -> Result<(), Error> {
@@ -39,9 +55,22 @@ pub fn libtcp_config(device: &utils::NCCLSocketDev) -> Result<(), Error> {
     file.write_all(format!("ip = {}; ", ip).as_bytes()).unwrap();
     file.write_all(format!("gw = {}; ", gw).as_bytes()).unwrap();
     file.write_all(b"mask = 255.255.255.0; }\n").unwrap();
-    file.write_all(
-        format!("dpdk {{ pci = {}; socket-mem = 8192,8192; numa = 1; }}\n", device.pci_path).as_bytes(),
-    )
+    match get_numa_node_count() {
+        1 => file.write_all(
+            format!("dpdk {{ pci = {}; socket-mem = 8192; }}\n", device.pci_path).as_bytes(),
+        ),
+        2 => file.write_all(
+            format!(
+                "dpdk {{ pci = {}; socket-mem = 8192,8192; numa = 1; }}\n",
+                device.pci_path
+            )
+            .as_bytes(),
+        ),
+        _ => Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "Invalid numa node count",
+        )),
+    }
     .unwrap();
     file.write_all(b"tcp { snd_queue_size = 2048; tso = 1; opt_seq = 1; usr_snd_mss = 8832; opt_sack = 1;  }\n")
         .unwrap();
@@ -269,7 +298,6 @@ impl TCPReader {
             buf = &mut buf[len..];
         }
 
-        // let buflen = buf.len();
         while !buf.is_empty() {
             self.iov.iov_len = 0;
             let ret = unsafe { tpa_zreadv(self.fd, &mut self.iov, 1) };
@@ -283,14 +311,10 @@ impl TCPReader {
                 };
                 let tmp = buf;
                 if src.len() <= tmp.len() {
-                    //if buflen < 8192 {
-                        tmp[..src.len()].copy_from_slice(src);
-                    //}
+                    tmp[..src.len()].copy_from_slice(src);
                     buf = &mut tmp[src.len()..];
                 } else {
-                    //if buflen < 8192 {
-                        tmp.copy_from_slice(&src[..tmp.len()]);
-                    // }
+                    tmp.copy_from_slice(&src[..tmp.len()]);
                     self.partial = Some(src[tmp.len()..].to_vec());
                     buf = &mut tmp[0..0];
                 }
