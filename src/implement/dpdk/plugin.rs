@@ -227,7 +227,6 @@ impl Net for BaguaNet {
                     worker_b.wait();
 
                     let mut data_reader = TCPReader::new(&mut worker);
-                    let mut ctrl_reader = TCPReader::new(&mut worker);
                     b.wait();
 
                     // Reciever loop
@@ -235,19 +234,14 @@ impl Net for BaguaNet {
                         tcp_worker_run(&mut worker);
 
                         if let Ok((data, state)) = msg_receiver.try_recv() {
-                            let mut target_nbytes = data.len().to_be_bytes();
-                            let size = target_nbytes.len();
-                            ctrl_reader
-                                .read_exact(&mut worker, &mut target_nbytes[..], size)
-                                .unwrap();
-                            let target_nbytes = usize::from_be_bytes(target_nbytes);
+                            let data_len = data.len();
                             data_reader
-                                .read_exact(&mut worker, data, target_nbytes)
+                                .read_exact(&mut worker, data, data_len)
                                 .unwrap();
                             match state.lock() {
                                 Ok(mut state) => {
                                     state.completed_subtasks += 1;
-                                    state.nbytes_transferred += target_nbytes;
+                                    state.nbytes_transferred += data_len;
                                 }
                                 Err(poisoned) => {
                                     tracing::warn!("{:?}", poisoned);
@@ -299,7 +293,6 @@ impl Net for BaguaNet {
                     let mut worker = tcp_worker_init();
                     set_affinity(id + 16);
                     let mut data_writer = TCPWriter::new(&mut worker, socket_handle.clone(), None);
-                    let mut ctrl_writer = TCPWriter::new(&mut worker, socket_handle, None);
 
                     // Make it one so that toggle for Bucket 0 makes it zero.
                     let mut sid = 0u8;
@@ -339,10 +332,6 @@ impl Net for BaguaNet {
                                 }
                             }
 
-                            let send_nbytes = data.len().to_be_bytes();
-                            ctrl_writer
-                                .tcp_write(&mut worker, &send_nbytes, 0, 0)
-                                .expect("tcp_write failed");
                             data_writer
                                 .tcp_write(
                                     &mut worker,
