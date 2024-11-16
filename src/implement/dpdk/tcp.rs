@@ -372,7 +372,7 @@ impl TCPWriter {
     ) -> Result<isize, std::io::Error> {
         self.iov.iov_base = buf.as_ptr() as *mut std::ffi::c_void;
         self.iov.iov_len = buf.len() as u32;
-        self.iov.iov_phys = 0; // Should be 0 for non-mlx devices
+        self.iov.iov_phys = 1; // Should be 0 for non-mlx devices
         self.iov.__bindgen_anon_1.iov_write_done = None;
         self.iov.iov_param = ptr::null_mut();
         // Not in network order
