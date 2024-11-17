@@ -18,7 +18,7 @@ storage: $(PLUGIN_SO) $(BAGUA_NET_LIB)
 
 $(PLUGIN_SO): bagua_net.cc $(NCCL_NET_V5) $(NCCL_NET_V3) $(BAGUA_NET_LIB)
 	$(CXX) -v $(INC) \
-	-std=c++17 -fPIC -shared \
+	-std=c++17 -fPIC -shared -O3 -march=native -flto \
 	-o $@ $^ \
 	-L. -l:$(BAGUA_NET_LIB) -lz -lcurl -libverbs -lmlx5 -lnuma $(LDFLAGS)
 
