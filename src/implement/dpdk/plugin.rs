@@ -357,7 +357,10 @@ impl Net for BaguaNet {
 
                             // Storage write only works when "storage" feature
                             // is enabled; otherwise it's a noop.
-                            if cfg!(feature = "storage") && !chunk_offset.is_negative() {
+                            if cfg!(feature = "storage")
+                                && !chunk_offset.is_negative()
+                                && bucket_id != WARMPUP_BUCKETID
+                            {
                                 msg_repeater_sender
                                     .send((chunk_offset, data, state.clone()))
                                     .unwrap();
@@ -401,7 +404,7 @@ impl Net for BaguaNet {
         self.socket_request_next_id += 1;
         let send_comm = self.send_comm_map.get(&send_comm_id).unwrap();
         let mut nsubtasks = 1;
-        if cfg!(feature = "storage") && !chunk_tag.is_negative() {
+        if cfg!(feature = "storage") && !chunk_tag.is_negative() && bucket_id != WARMPUP_BUCKETID {
             nsubtasks = 2;
         }
         let task_state = Arc::new(RwLock::new(RequestState {
