@@ -9,6 +9,8 @@ use nix::unistd::Pid;
 use std::collections::HashMap;
 use std::str::FromStr;
 
+use thread_priority::*;
+
 use std::sync::{Arc, Barrier};
 use std::sync::{Mutex, RwLock};
 
@@ -26,6 +28,14 @@ pub fn set_affinity(coreid: usize) {
     let mut cpu_set = CpuSet::new();
     cpu_set.set(coreid).unwrap();
     sched_setaffinity(Pid::from_raw(0), &cpu_set).unwrap();
+    set_current_thread_priority(ThreadPriority::Max).unwrap();
+    unsafe {tpa_thread_register();}
+    /*
+    let thread_id = thread_native_id();
+assert!(set_thread_priority_and_policy(thread_id,
+                                       ThreadPriority::Max,
+                                       ThreadSchedulePolicy::Realtime(RealtimeThreadSchedulePolicy::Fifo)).is_ok());
+    */
 }
 
 #[derive(Debug)]

@@ -72,7 +72,7 @@ pub fn libtcp_config(device: &utils::NCCLSocketDev) -> Result<(), Error> {
         )),
     }
     .unwrap();
-    file.write_all(b"tcp { snd_queue_size = 2048; tso = 1; opt_seq = 1; usr_snd_mss = 8832; opt_sack = 1;  }\n")
+    file.write_all(b"tcp { snd_queue_size = 2048; tso = 0; opt_seq = 1; usr_snd_mss = 8192; opt_sack = 1; rx_merge = 1; }\n")
         .unwrap();
     file.write_all(b"trace { enable = 0; }\n").unwrap();
     file.flush().unwrap();
