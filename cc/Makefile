@@ -1,10 +1,11 @@
 PKG_CONFIG?=pkg-config
 
-INC:= -I. -I./v5 -I./v3 -I/usr/share/tpa
+INC:= -I. -I./v5 -I./v3 -I./v6 -I/usr/share/tpa
 PLUGIN_SO:=libnccl-net.so
 BAGUA_NET_LIB:=libbagua_net.a
 NCCL_NET_V5:=./v5/nccl_net_v5.cc
 NCCL_NET_V3:=./v3/nccl_net_v3.cc
+NCCL_NET_V6:=./v6/nccl_net_v6.cc
 LDFLAGS+=$(shell $(PKG_CONFIG) --libs --static libtpa)
 LDFLAGS += -lm
 
@@ -16,7 +17,7 @@ endif
 default: $(PLUGIN_SO) $(BAGUA_NET_LIB)
 storage: $(PLUGIN_SO) $(BAGUA_NET_LIB)
 
-$(PLUGIN_SO): bagua_net.cc $(NCCL_NET_V5) $(NCCL_NET_V3) $(BAGUA_NET_LIB)
+$(PLUGIN_SO): bagua_net.cc $(NCCL_NET_V5) $(NCCL_NET_V3) $(NCCL_NET_V6) $(BAGUA_NET_LIB)
 	$(CXX) -v $(INC) \
 	-std=c++17 -fPIC -shared -O3 -march=native -flto \
 	-o $@ $^ \
